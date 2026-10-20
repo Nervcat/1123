@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TACTICAL · v0.13.1-alpha</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #050a0c;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    user-select: none;
+  }
+
+  body.is-paused { filter: sepia(0.2) hue-rotate(140deg) brightness(0.8); }
+
+  .flash-red-panel { animation: flash-red-panel 0.3s ease-out; }
+  @keyframes flash-red-panel {
+    0% { background-color: rgba(255, 60, 60, 0.25); border-left: 2px solid rgba(255, 80, 80, 0.9); }
+    100% { background-color: #0a1216; border-left: 1px solid rgba(94, 224, 196, 0.25); }
+  }
+
+  .shake-panel { animation: shake-panel 0.2s cubic-bezier(.36,.07,.19,.97) both; }
+  @keyframes shake-panel {
+    10%, 90% { transform: translate3d(-1px, 0.5px, 0); }
+    20%, 80% { transform: translate3d(1px, -1px, 0); }
+    30%, 50%, 70% { transform: translate3d(-1.5px, 0.5px, 0); }
+    40%, 60% { transform: translate3d(1.5px, -0.5px, 0); }
+  }
+
+  #stage-container {
+    position: absolute;
+    top: 0; left: 0; bottom: 0; right: 310px;
+    overflow: hidden;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .panel {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 310px;
+    background: #0a1216;
+    border-left: 1px solid rgba(94, 224, 196, 0.25);
+    padding: 24px 20px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+    color: #5ee0c4;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .panel::-webkit-scrollbar { width: 4px; }
+  .panel::-webkit-scrollbar-thumb { background: rgba(94, 224, 196, 0.2); border-radius: 2px; }
+
+  .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .row.tight { margin-bottom: 2px; }
+  .label { color: rgba(94, 224, 196, 0.6); letter-spacing: 0.12em; font-size: 10px; }
+  .val { color: #5ee0c4; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .val.current { font-size: 15px; }
+  .val.target { color: rgba(94, 224, 196, 0.55); }
+
+  .gauge {
+    height: 4px;
+    background: rgba(94, 224, 196, 0.12);
+    margin: 2px 0 8px;
+    position: relative;
+    overflow: hidden;
+    border-radius: 1px;
+  }
+  #energyFill { height: 100%; background: #6fd4ff; width: 0%; transition: width 0.2s linear; }
+  #armorFill { background: #ffd76e; }
+
+  .slider-container { position: relative; margin-bottom: 12px; }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 3px;
+    background: rgba(94, 224, 196, 0.18);
+    outline: none;
+    margin: 6px 0 4px;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 15px;
+    background: #5ee0c4;
+    cursor: pointer;
+    border-radius: 1px;
+    box-shadow: 0 0 6px rgba(94, 224, 196, 0.6);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 10px;
+    height: 15px;
+    background: #5ee0c4;
+    cursor: pointer;
+    border-radius: 1px;
+    border: none;
+    box-shadow: 0 0 6px rgba(94, 224, 196, 0.6);
+  }
+
+  .slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: rgba(94, 224, 196, 0.4);
+    letter-spacing: 0.05em;
+    padding: 0 2px;
+  }
+  .slider-labels span.active { color: #ffd76e; font-weight: bold; }
+
+  .divider { height: 1px; background: rgba(94, 224, 196, 0.18); margin: 12px 0; }
+
+  .action-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .action-btn {
+    flex: 1;
+    height: 34px;
+    background: rgba(94, 224, 196, 0.1);
+    border: 1px solid rgba(94, 224, 196, 0.5);
+    color: #5ee0c4;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s;
+    font-weight: bold;
+    user-select: none;
+    outline: none;
+  }
+  .action-btn:hover:not(.disabled) { background: rgba(94, 224, 196, 0.25); }
+  .action-btn.targeting { background: rgba(255, 200, 50, 0.15); border-color: #ffc832; color: #ffc832; animation: pulse 1s infinite alternate; }
+  .action-btn.mode-active { background: rgba(94, 224, 196, 0.3); border-color: #5ee0c4; color: #ffffff; box-shadow: 0 0 10px rgba(94, 224, 196, 0.4); }
+  @keyframes pulse {
+    from { box-shadow: 0 0 5px rgba(255,200,50,0.1); }
+    to { box-shadow: 0 0 15px rgba(255,200,50,0.6); }
+  }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+    font-size: 10px;
+    color: rgba(94, 224, 196, 0.6);
+    letter-spacing: 0.08em;
+    margin-top: auto;
+    padding-top: 20px;
+  }
+
+  #pauseText {
+    position: absolute;
+    bottom: 160px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    font-weight: bold;
+    color: #5ee0c4;
+    letter-spacing: 0.2em;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 20;
+    text-shadow: 0 0 10px rgba(94, 224, 196, 0.5);
+  }
+  body.is-paused #pauseText { opacity: 1; animation: blinkText 1.5s infinite; }
+  @keyframes blinkText {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  #card-hand {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 20px;
+    z-index: 50;
+  }
+
+  .card {
+    width: 100px;
+    height: 130px;
+    background: rgba(20, 50, 60, 0.9);
+    border: 2px solid #5ee0c4;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.2s, opacity 0.2s, filter 0.2s;
+    box-shadow: 0 0 15px rgba(94, 224, 196, 0.3), inset 0 0 12px rgba(94, 224, 196, 0.2);
+    position: relative;
+  }
+  .card:hover:not(.disabled) {
+    transform: translateY(-8px) scale(1.05);
+    box-shadow: 0 0 25px rgba(94, 224, 196, 0.8), inset 0 0 20px rgba(94, 224, 196, 0.4);
+    border-color: #ffffff;
+  }
+  .card.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(10, 15, 20, 0.8);
+    box-shadow: none;
+    filter: grayscale(1);
+    transform: none;
+  }
+  .card.shake { animation: shake 0.3s cubic-bezier(.36,.07,.19,.97) both; }
+  @keyframes shake {
+    10%, 90% { transform: translate3d(-1px, 0, 0); }
+    20%, 80% { transform: translate3d(2px, 0, 0); }
+    30%, 50%, 70% { transform: translate3d(-3px, 0, 0); }
+    40%, 60% { transform: translate3d(3px, 0, 0); }
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: #ffffff;
+    text-shadow: 0 0 8px #5ee0c4;
+    margin-bottom: 4px;
+  }
+  .card.disabled .card-title { color: #888; text-shadow: none; }
+
+  .card-cost { font-size: 11px; color: #ffd76e; font-weight: bold; }
+  .card.disabled .card-cost { color: #555; }
+
+  .card-desc {
+    font-size: 9.5px;
+    color: rgba(94, 224, 196, 0.9);
+    text-align: center;
+    padding: 0 8px;
+    margin-top: 8px;
+    line-height: 1.2;
+    font-weight: bold;
+  }
+  .card.disabled .card-desc { color: #666; }
+</style>
+</head>
+<body>
+
+<div id="stage-container">
+  <canvas id="stage"></canvas>
+  <div id="pauseText">PAUSED - PRESS SPACE TO RESUME</div>
+  <div id="card-hand"></div>
+</div>
+
+<div class="panel" id="ui-panel">
+  <div class="row tight">
+    <span class="label">ARMOR</span>
+    <span class="val" id="armorVal">100 / 100</span>
+  </div>
+  <div class="gauge"><div class="gauge-fill" id="armorFill" style="width: 100%;"></div></div>
+
+  <div class="row tight">
+    <span class="label">ENERGY</span>
+    <span class="val" id="energyVal">0 / 5</span>
+  </div>
+  <div class="gauge"><div class="gauge-fill" id="energyFill" style="width: 0%;"></div></div>
+
+  <div class="divider"></div>
+
+  <div class="row tight">
+    <span class="label">CURRENT SPEED</span>
+    <span class="val current" id="curVal">0 m/s</span>
+  </div>
+  <div class="gauge"><div class="gauge-fill" id="gaugeFill" style="background:#5ee0c4"></div></div>
+
+  <div class="row tight">
+    <span class="label">TARGET SPEED</span>
+    <span class="val target" id="tgtVal">NORMAL (1000 m/s)</span>
+  </div>
+
+  <div class="slider-container">
+    <input type="range" id="speedInput" min="0" max="2" value="1" step="1">
+    <div class="slider-labels">
+      <span id="lblStop">STOP</span>
+      <span id="lblNorm">NORMAL</span>
+      <span id="lblBoost">BOOST</span>
+    </div>
+  </div>
+
+  <div class="row tight">
+    <span class="label">CURRENT DISTANCE</span>
+    <span class="val current" id="curDistVal" style="font-size: 14px; color: #7ad4c5;">2000 m</span>
+  </div>
+  <div class="gauge"><div class="gauge-fill" id="distGaugeFill" style="width: 43%; background:#7ad4c5;"></div></div>
+
+  <div class="row tight">
+    <span class="label">TARGET DISTANCE</span>
+    <span class="val target" id="tgtDistVal">2000 m</span>
+  </div>
+  <input type="range" id="distInput" min="500" max="4000" value="2000" step="100">
+
+  <div class="divider"></div>
+
+  <div class="action-row">
+    <button id="keepBtn" class="action-btn">KEEP DIST</button>
+    <button id="orbitBtn" class="action-btn">ORBIT</button>
+  </div>
+
+  <div class="divider"></div>
+  <div class="legend">
+    <span>▲ ESC</span>
+    <span>◈ HOSTILE</span>
+    <span>◇ OBJECTIVE</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+
+  const cvs = $('stage');
+  const ctx = cvs.getContext('2d');
+  const container = $('stage-container');
+  const handContainer = $('card-hand');
+  const uiPanel = $('ui-panel');
+
+  let W = 0, H = 0, DPR = 1;
+  let T = 0, last = 0;
+  let isPaused = false;
+
+  const HUE = 168;
+  const col = (a, l = 62) => `hsla(${HUE}, 72%, ${l}%, ${a})`;
+
+  const TURN_DURATION = 5.0;
+  let turnTimer = 0;
+
+  let playerArmor = 100;
+  const playerMaxArmor = 100;
+  let playerEnergy = 0;
+  let currentMaxEnergy = 5;
+
+  let speedMode = 1;
+  let targetSpeed = 1000;
+
+  const ACCEL = 700;
+  const FIRE_RANGE = 3000;
+  const WEB_RANGE = 4000;
+  const NEUT_RANGE = 4000;
+  const HOSTILE_ATTACK_RANGE = 3000;
+  const FIRE_DAMAGE = 10;
+
+  const ENEMY_BASE_SPEED = 1000;
+  const ENEMY_ACCEL = 600;
+  const ENEMY_AGGRESSIVE_RADIUS = 2000;
+  const ENEMY_RETREAT_RADIUS = 5000;
+  const ENEMY_ENERGY_THRESHOLD = 3;
+  const ENEMY_ATTACK_COST = 1;
+
+  /* 雙層邊界 */
+  const WORLD_SOFT_BOUNDARY = 8000;
+  const WORLD_HARD_BOUNDARY = 9000;
+  const WORLD_SOFT_PUSH_FACTOR = 0.5;
+  const WORLD_SOFT_PUSH_MAX = 400;
+  const HARD_BOUNDARY_BOUNCE = 0.7;
+
+  /* 相機：最多跟隨到玩家位置的 50% */
+  const CAM_FOLLOW_MAX = 0.5;
+
+  let currentSpeed = 0;
+  let targetDist = 2000;
+
+  let px_m = 0, py_m = 0;
+  let pvx_m = 0, pvy_m = 0;
+  let heading = 0;
+
+  let ex_m = 2500, ey_m = 0;
+  let evx_m = 0, evy_m = -1000;
+  let enemyMode = 'orbit';
+
+  let camOffsetX_m = 0, camOffsetY_m = 0;
+
+  let enemyArmor = 100;
+  const enemyMaxArmor = 100;
+  let enemyEnergy = 5;
+  const enemyMaxEnergy = 5;
+
+  let hostileFiredThisTurn = false;
+
+  let isFirstFrame = true;
+
+  const landmarks = [
+    { x: -4000, y: -3000, name: 'OBJ-A' },
+    { x: 3000, y: 2500, name: 'OBJ-B' },
+    { x: 3500, y: -3500, name: 'OBJ-C' }
+  ];
+
+  let escTrail = [];
+  const MAX_TRAIL_LENGTH = 500;
+  let lastTrailX = 0, lastTrailY = 0;
+
+  let escMode = 'idle';
+  let isSelectingMode = null;
+  let activeTarget = null;
+
+  const SKILLS = {
+    web:    { name: 'WEB',    cost: 1, descHtml: '减速目标<br>-40%速度' },
+    fire:   { name: 'FIRE',   cost: 2, descHtml: '连射激光<br>造成伤害' },
+    neut:   { name: 'NEUT',   cost: 2, descHtml: '耗能干扰<br>-3能量' },
+    repair: { name: 'REPAIR', cost: 2, descHtml: '持续修复<br>+10护甲/秒' }
+  };
+  let hoveredCardType = null;
+  let cardElements = [];
+
+  let lasers = [];
+  const bursts = [
+    { hostile: false, on: false, time: 0, spawn: 0 },
+    { hostile: true,  on: false, time: 0, spawn: 0 }
+  ];
+  const BURST_DURATION = 0.6;
+  const LASER_INTERVAL = 0.07;
+
+  let webState = 'ready';
+  let webTimer = 0;
+  let webDebuffActive = false;
+  const WEB_DURATION = 5.0;
+  const WEB_COOLDOWN = 5.0;
+  const WEB_SLOW_FACTOR = 0.6;
+
+  let neutState = 'ready';
+  let neutTimer = 0;
+  const NEUT_COOLDOWN = 10.0;
+  const NEUT_ENERGY_DRAIN = 3;
+
+  let repairState = 'ready';
+  let repairTimer = 0;
+  let repairTickTimer = 0;
+  const REPAIR_DURATION = 5.0;
+  const REPAIR_COOLDOWN = 5.0;
+
+  let floatingTexts = [];
+  function spawnFloatingText(x, y, text, color) {
+    floatingTexts.push({ x, y, text, color, life: 1.0, maxLife: 1.0 });
+  }
+
+  let mouseX = -100, mouseY = -100;
+
+  const armorVal = $('armorVal');
+  const armorFill = $('armorFill');
+  const energyVal = $('energyVal');
+  const energyFill = $('energyFill');
+  const speedInput = $('speedInput');
+  const tgtVal = $('tgtVal');
+  const lblStop = $('lblStop');
+  const lblNorm = $('lblNorm');
+  const lblBoost = $('lblBoost');
+  const distInput = $('distInput');
+  const curVal = $('curVal');
+  const curDistVal = $('curDistVal');
+  const tgtDistVal = $('tgtDistVal');
+  const gaugeFill = $('gaugeFill');
+  const distGaugeFill = $('distGaugeFill');
+  const keepBtn = $('keepBtn');
+  const orbitBtn = $('orbitBtn');
+
+  let lastCurTxt = '', lastCurDistTxt = '', lastGauge = -1;
+  let lastArmorTxt = '', lastEnergyTxt = '';
+
+  const SPEED_MODES = [
+    { speed: 0,    label: 'STOP (0 m/s)',        color: '#ff6b8a', maxE: 5, lbl: lblStop },
+    { speed: 1000, label: 'NORMAL (1000 m/s)',   color: '#5ee0c4', maxE: 5, lbl: lblNorm },
+    { speed: 1200, label: 'BOOST (1200 m/s)',    color: '#ffd76e', maxE: 4, lbl: lblBoost }
+  ];
+
+  function triggerDamageEffect() {
+    uiPanel.classList.remove('flash-red-panel', 'shake-panel');
+    void uiPanel.offsetWidth;
+    uiPanel.classList.add('flash-red-panel', 'shake-panel');
+  }
+
+  function initCards() {
+    handContainer.innerHTML = '';
+    cardElements = [];
+
+    ['web', 'fire', 'neut', 'repair'].forEach(type => {
+      const sk = SKILLS[type];
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.type = type;
+      card.innerHTML = `
+        <div class="card-title">${sk.name}</div>
+        <div class="card-cost">${sk.cost} ENERGY</div>
+        <div class="card-desc">${sk.descHtml}</div>
+      `;
+
+      card.addEventListener('mouseenter', () => { hoveredCardType = type; });
+      card.addEventListener('mouseleave', () => { hoveredCardType = null; });
+
+      card.addEventListener('click', () => {
+        if (isPaused) return;
+
+        const affordable = playerEnergy >= sk.cost;
+        const hdist_m = Math.hypot(px_m - ex_m, py_m - ey_m);
+        let canCast = true;
+        if (type === 'fire') canCast = hdist_m <= FIRE_RANGE;
+        else if (type === 'web') canCast = hdist_m <= WEB_RANGE && webState === 'ready';
+        else if (type === 'neut') canCast = hdist_m <= NEUT_RANGE && neutState === 'ready';
+        else if (type === 'repair') canCast = repairState === 'ready';
+
+        if (!affordable || !canCast) {
+          card.classList.remove('shake');
+          void card.offsetWidth;
+          card.classList.add('shake');
+          return;
+        }
+
+        playerEnergy -= sk.cost;
+        if (type === 'fire') {
+          bursts[0].on = true; bursts[0].time = 0; bursts[0].spawn = 0;
+          enemyArmor = Math.max(0, enemyArmor - FIRE_DAMAGE);
+          spawnFloatingText(ex_m, ey_m, '-' + FIRE_DAMAGE, '#ff4d6d');
+        } else if (type === 'web') {
+          webState = 'active'; webTimer = WEB_DURATION; webDebuffActive = true;
+        } else if (type === 'neut') {
+          neutState = 'cooldown'; neutTimer = NEUT_COOLDOWN;
+          enemyEnergy = Math.max(0, enemyEnergy - NEUT_ENERGY_DRAIN);
+          spawnFloatingText(ex_m, ey_m, '-' + NEUT_ENERGY_DRAIN, '#6fd4ff');
+        } else if (type === 'repair') {
+          repairState = 'active'; repairTimer = REPAIR_DURATION; repairTickTimer = 0;
+        }
+      });
+
+      handContainer.appendChild(card);
+      cardElements.push({ el: card, type, cost: sk.cost, descEl: card.querySelector('.card-desc') });
+    });
+  }
+
+  function refreshCardVisuals() {
+    cardElements.forEach(item => {
+      let state = 'ready', timer = 0;
+      if (item.type === 'web') { state = webState; timer = webTimer; }
+      else if (item.type === 'neut') { state = neutState; timer = neutTimer; }
+      else if (item.type === 'repair') { state = repairState; timer = repairTimer; }
+
+      const statusText = state === 'active' ? `ACTIVE ${timer.toFixed(1)}s`
+                       : state === 'cooldown' ? `CD ${timer.toFixed(1)}s` : '';
+      const canCast = state === 'ready' && playerEnergy >= item.cost;
+
+      item.el.classList.toggle('disabled', !canCast);
+      item.descEl.innerHTML = statusText || SKILLS[item.type].descHtml;
+      item.descEl.style.color = statusText ? '#ffd76e' : '';
+    });
+  }
+
+  function updateSpeedMode() {
+    speedMode = parseInt(speedInput.value);
+    const m = SPEED_MODES[speedMode];
+    targetSpeed = m.speed;
+    tgtVal.textContent = m.label;
+    tgtVal.style.color = m.color;
+    [lblStop, lblNorm, lblBoost].forEach(el => el.classList.remove('active'));
+    m.lbl.classList.add('active');
+    currentMaxEnergy = m.maxE;
+    if (playerEnergy > currentMaxEnergy) playerEnergy = currentMaxEnergy;
+  }
+
+  function togglePause() {
+    isPaused = !isPaused;
+    document.body.classList.toggle('is-paused', isPaused);
+  }
+
+  speedInput.addEventListener('input', updateSpeedMode);
+
+  distInput.addEventListener('input', () => {
+    targetDist = parseFloat(distInput.value);
+    tgtDistVal.textContent = Math.round(targetDist) + ' m';
+  });
+  tgtDistVal.textContent = Math.round(targetDist) + ' m';
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+  });
+
+  keepBtn.addEventListener('click', () => {
+    isSelectingMode = (escMode === 'keep' && !isSelectingMode) ? 'keep'
+                    : (isSelectingMode === 'keep') ? null : 'keep';
+    resetActionStates();
+  });
+  orbitBtn.addEventListener('click', () => {
+    isSelectingMode = (escMode === 'orbit' && !isSelectingMode) ? 'orbit'
+                    : (isSelectingMode === 'orbit') ? null : 'orbit';
+    resetActionStates();
+  });
+
+  function setActionBtn(btn, isSelecting, isActive, baseText) {
+    btn.textContent = isSelecting ? 'SELECT' : baseText;
+    btn.className = 'action-btn' + (isSelecting ? ' targeting' : (isActive ? ' mode-active' : ''));
+  }
+
+  function resetActionStates() {
+    setActionBtn(keepBtn, isSelectingMode === 'keep', escMode === 'keep', 'KEEP DIST');
+    setActionBtn(orbitBtn, isSelectingMode === 'orbit', escMode === 'orbit', 'ORBIT');
+    document.body.style.cursor = isSelectingMode ? 'crosshair' : 'default';
+  }
+
+  cvs.addEventListener('mousemove', (e) => {
+    const rect = cvs.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+  });
+
+  function hitTest(mx, my) {
+    const uiScale = getUIScale();
+    const S = getScale();
+    const camX = W / 2 - camOffsetX_m * S;
+    const camY = H / 2 - camOffsetY_m * S;
+    if (Math.hypot(mx - (camX + ex_m * S), my - (camY + ey_m * S)) < 45 * uiScale)
+      return { type: 'hostile' };
+    for (let i = 0; i < landmarks.length; i++) {
+      if (Math.hypot(mx - (camX + landmarks[i].x * S), my - (camY + landmarks[i].y * S)) < 25 * uiScale)
+        return { type: 'landmark', index: i };
+    }
+    return null;
+  }
+
+  cvs.addEventListener('mousedown', (e) => {
+    const rect = cvs.getBoundingClientRect();
+    const hitTarget = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+
+    if (isSelectingMode) {
+      if (hitTarget) { escMode = isSelectingMode; activeTarget = hitTarget; }
+      isSelectingMode = null;
+      resetActionStates();
+    } else if (hitTarget && escMode !== 'idle') {
+      const sameTarget =
+        (hitTarget.type === 'hostile' && activeTarget?.type === 'hostile') ||
+        (hitTarget.type === 'landmark' && activeTarget?.type === 'landmark' && activeTarget.index === hitTarget.index);
+      if (sameTarget) {
+        escMode = 'idle'; activeTarget = null; resetActionStates();
+      }
+    }
+  });
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = container.clientWidth || (window.innerWidth - 310);
+    H = container.clientHeight || window.innerHeight;
+    cvs.width = Math.round(W * DPR);
+    cvs.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    isFirstFrame = true;
+    escTrail = [];
+    lasers = [];
+    floatingTexts = [];
+  }
+
+  function getScale() { return Math.min(W, H) / 12000 || 0.05; }
+  function getUIScale() { return Math.max(0.5, Math.min(W / 900, H / 620, 1.2)); }
+
+  function bracketRect(x, y, hw, hh, b, lw, alpha) {
+    ctx.strokeStyle = col(alpha);
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    for (const [sx, sy] of [[-1,-1],[1,-1],[1,1],[-1,1]]) {
+      ctx.moveTo(x + sx * hw, y + sy * (hh - b));
+      ctx.lineTo(x + sx * hw, y + sy * hh);
+      ctx.lineTo(x + sx * (hw - b), y + sy * hh);
+    }
+    ctx.stroke();
+  }
+
+  function drawGrid(cx, cy, S) {
+    const gridSize = 1000 * S;
+    if (gridSize <= 0) return;
+    ctx.strokeStyle = col(0.04);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = cx % gridSize; x < W; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = cy % gridSize; y < H; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  }
+
+  function drawWorldBoundary(cx, cy, S, uiScale) {
+    ctx.save();
+    ctx.strokeStyle = col(0.12);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([15 * uiScale, 10 * uiScale]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, WORLD_SOFT_BOUNDARY * S, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255, 100, 100, 0.25)';
+    ctx.setLineDash([8 * uiScale, 6 * uiScale]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, WORLD_HARD_BOUNDARY * S, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawShip(x, y, heading, uiScale, isEnemy) {
+    const k = 1.15 * uiScale;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(heading);
+    ctx.beginPath();
+    if (isEnemy) {
+      ctx.moveTo(8 * k, 0);
+      ctx.lineTo(-6 * k, -5 * k);
+      ctx.lineTo(-3 * k, 0);
+      ctx.lineTo(-6 * k, 5 * k);
+    } else {
+      ctx.moveTo(9 * k, 0);
+      ctx.lineTo(-5 * k, -5 * k);
+      ctx.lineTo(-2.5 * k, 0);
+      ctx.lineTo(-5 * k, 5 * k);
+    }
+    ctx.closePath();
+    ctx.fillStyle = col(isEnemy ? 0.15 : 0.88);
+    ctx.fill();
+    ctx.strokeStyle = col(isEnemy ? 0.85 : 1.0, isEnemy ? 62 : 72);
+    ctx.lineWidth = isEnemy ? 1 : 0.8;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawEnemyBars(x, y, uiScale) {
+    const barW = 40 * uiScale;
+    const barH = 3 * uiScale;
+    const gap = 2 * uiScale;
+    const bx = x - barW / 2;
+    const by = y + 22 * uiScale;
+
+    ctx.fillStyle = col(0.12);
+    ctx.fillRect(bx, by, barW, barH);
+    if (enemyArmor > 0) {
+      ctx.fillStyle = '#5ee0c4';
+      ctx.fillRect(bx, by, barW * (enemyArmor / enemyMaxArmor), barH);
+    }
+
+    const by2 = by + barH + gap;
+    ctx.fillStyle = col(0.12);
+    ctx.fillRect(bx, by2, barW, barH);
+    if (enemyEnergy > 0) {
+      ctx.fillStyle = '#6fd4ff';
+      ctx.fillRect(bx, by2, barW * (enemyEnergy / enemyMaxEnergy), barH);
+    }
+  }
+
+  function drawLandmark(x, y, uiScale, name, isSelected) {
+    const size = 5 * uiScale;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(size, 0);
+    ctx.lineTo(0, size);
+    ctx.lineTo(-size, 0);
+    ctx.closePath();
+
+    if (isSelected) { ctx.fillStyle = col(0.8, 72); ctx.fill(); ctx.strokeStyle = col(1.0); }
+    else { ctx.fillStyle = col(0.2); ctx.fill(); ctx.strokeStyle = col(0.45); }
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.font = Math.max(8, 8 * uiScale) + 'px ui-monospace, monospace';
+    ctx.fillStyle = isSelected ? col(0.9) : col(0.4);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(name, 0, size + 4 * uiScale);
+    ctx.restore();
+  }
+
+  function drawCorners(uiScale) {
+    const m = 12, l = 20 * uiScale;
+    ctx.strokeStyle = col(0.20);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const [cx, cy, sx, sy] of [
+      [m, m, 1, 1], [W - m, m, -1, 1], [W - m, H - m, -1, -1], [m, H - m, 1, -1]
+    ]) {
+      ctx.moveTo(cx, cy + sy * l);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx + sx * l, cy);
+    }
+    ctx.stroke();
+  }
+
+  function drawTurnBar(cx, uiScale) {
+    const barW = 160 * uiScale;
+    const barH = 3 * uiScale;
+    const x = cx - barW / 2;
+    const y = 20 * uiScale;
+
+    ctx.fillStyle = col(0.1);
+    ctx.fillRect(x, y, barW, barH);
+
+    const progress = turnTimer / TURN_DURATION;
+    const halfW = (barW / 2) * progress;
+    ctx.fillStyle = col(0.8);
+    ctx.fillRect(x, y, halfW, barH);
+    ctx.fillRect(x + barW - halfW, y, halfW, barH);
+
+    ctx.fillStyle = col(0.5);
+    ctx.fillRect(cx - 1, y - 2, 2, barH + 4);
+
+    ctx.fillStyle = col(0.4);
+    ctx.fillRect(x - 4 * uiScale, y - 2, 2 * uiScale, barH + 4);
+    ctx.fillRect(x + barW + 2 * uiScale, y - 2, 2 * uiScale, barH + 4);
+  }
+
+  function drawUI(uiScale) {
+    const fs = Math.max(9, 9.5 * uiScale);
+    ctx.save();
+    ctx.font = fs + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = col(0.25);
+    ctx.fillText('TACTICAL v0.13.1-alpha', 26, H - 20);
+    ctx.restore();
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!last) { last = now; return; }
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    if (W === 0 || H === 0) resize();
+
+    if (!isPaused) {
+      T += dt;
+
+      turnTimer += dt;
+      if (turnTimer >= TURN_DURATION) {
+        turnTimer -= TURN_DURATION;
+        playerEnergy = Math.min(currentMaxEnergy, playerEnergy + 1);
+        enemyEnergy = Math.min(enemyMaxEnergy, enemyEnergy + 1);
+        hostileFiredThisTurn = false;
+      }
+
+      if (!hostileFiredThisTurn && enemyEnergy >= ENEMY_ATTACK_COST) {
+        const hdist_m = Math.hypot(px_m - ex_m, py_m - ey_m);
+        if (hdist_m <= HOSTILE_ATTACK_RANGE) {
+          playerArmor = Math.max(0, playerArmor - 10);
+          triggerDamageEffect();
+          spawnFloatingText(px_m, py_m, '-10', '#ff4d6d');
+          bursts[1].on = true; bursts[1].time = 0; bursts[1].spawn = 0;
+          hostileFiredThisTurn = true;
+          enemyEnergy = Math.max(0, enemyEnergy - ENEMY_ATTACK_COST);
+        }
+      }
+
+      for (const b of bursts) {
+        if (!b.on) continue;
+        b.time += dt;
+        b.spawn += dt;
+        if (b.spawn >= LASER_INTERVAL) {
+          b.spawn -= LASER_INTERVAL;
+          lasers.push({
+            startJitterX: (Math.random() - 0.5) * 10,
+            startJitterY: (Math.random() - 0.5) * 10,
+            endJitterX: (Math.random() - 0.5) * 15,
+            endJitterY: (Math.random() - 0.5) * 15,
+            life: 0.15, maxLife: 0.15,
+            isHostile: b.hostile
+          });
+        }
+        if (b.time >= BURST_DURATION) b.on = false;
+      }
+
+      for (let i = lasers.length - 1; i >= 0; i--) {
+        lasers[i].life -= dt;
+        if (lasers[i].life <= 0) lasers.splice(i, 1);
+      }
+
+      if (webState === 'active') {
+        webTimer -= dt;
+        if (webTimer <= 0) { webState = 'cooldown'; webTimer = WEB_COOLDOWN; webDebuffActive = false; }
+      } else if (webState === 'cooldown') {
+        webTimer -= dt;
+        if (webTimer <= 0) { webState = 'ready'; webTimer = 0; }
+      }
+
+      if (neutState === 'cooldown') {
+        neutTimer -= dt;
+        if (neutTimer <= 0) { neutState = 'ready'; neutTimer = 0; }
+      }
+
+      if (repairState === 'active') {
+        repairTimer -= dt;
+        repairTickTimer -= dt;
+        if (repairTickTimer <= 0) {
+          playerArmor = Math.min(playerMaxArmor, playerArmor + 10);
+          repairTickTimer += 1.0;
+          spawnFloatingText(px_m, py_m, '+10', '#5ee0c4');
+        }
+        if (repairTimer <= 0) { repairState = 'cooldown'; repairTimer = REPAIR_COOLDOWN; }
+      } else if (repairState === 'cooldown') {
+        repairTimer -= dt;
+        if (repairTimer <= 0) { repairState = 'ready'; repairTimer = 0; }
+      }
+
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.life -= dt;
+        ft.y -= dt * 20;
+        if (ft.life <= 0) floatingTexts.splice(i, 1);
+      }
+    }
+
+    const uiScale = getUIScale();
+    const S = getScale();
+    const cx = W / 2;
+    const cy = H / 2;
+
+    if (isFirstFrame) {
+      px_m = ex_m + targetDist;
+      py_m = ey_m;
+      heading = Math.PI / 2;
+      isFirstFrame = false;
+      lastTrailX = px_m;
+      lastTrailY = py_m;
+    }
+
+    /* ===== 敵人狀態機 ===== */
+    if (enemyMode === 'orbit' && enemyEnergy < ENEMY_ENERGY_THRESHOLD) {
+      enemyMode = 'retreat';
+    } else if (enemyMode === 'retreat' && enemyEnergy >= enemyMaxEnergy) {
+      enemyMode = 'orbit';
+    }
+
+    /* ===== 敵人移動 ===== */
+    const dxEP = ex_m - px_m;
+    const dyEP = ey_m - py_m;
+    const distEP = Math.hypot(dxEP, dyEP) || 1;
+    const uxEP = dxEP / distEP;
+    const uyEP = dyEP / distEP;
+    const txEP = -uyEP;
+    const tyEP = uxEP;
+
+    const enemySpeedMul = webDebuffActive ? WEB_SLOW_FACTOR : 1;
+    const eMaxSpeed = ENEMY_BASE_SPEED * enemySpeedMul;
+    const enemyTargetRadius = enemyMode === 'orbit'
+      ? ENEMY_AGGRESSIVE_RADIUS
+      : ENEMY_RETREAT_RADIUS;
+
+    let desiredVr = (enemyTargetRadius - distEP) * 2.5;
+    desiredVr = Math.max(-eMaxSpeed, Math.min(eMaxSpeed, desiredVr));
+
+    let desiredVt = 0;
+    if (enemyMode === 'orbit') {
+      desiredVt = Math.sqrt(Math.max(0, eMaxSpeed * eMaxSpeed - desiredVr * desiredVr));
+    }
+
+    let targetEVx = uxEP * desiredVr + txEP * desiredVt;
+    let targetEVy = uyEP * desiredVr + tyEP * desiredVt;
+
+    const eR = Math.hypot(ex_m, ey_m);
+    if (eR > WORLD_SOFT_BOUNDARY) {
+      const overshoot = eR - WORLD_SOFT_BOUNDARY;
+      const pushMag = Math.min(overshoot * WORLD_SOFT_PUSH_FACTOR, WORLD_SOFT_PUSH_MAX);
+      targetEVx -= (ex_m / eR) * pushMag;
+      targetEVy -= (ey_m / eR) * pushMag;
+    }
+
+    if (!isPaused) {
+      let dvx = targetEVx - evx_m;
+      let dvy = targetEVy - evy_m;
+      const dvLen = Math.hypot(dvx, dvy);
+      const maxDv = ENEMY_ACCEL * dt;
+      if (dvLen > maxDv && dvLen > 0) {
+        dvx = (dvx / dvLen) * maxDv;
+        dvy = (dvy / dvLen) * maxDv;
+      }
+      evx_m += dvx;
+      evy_m += dvy;
+
+      ex_m += evx_m * dt;
+      ey_m += evy_m * dt;
+
+      const er = Math.hypot(ex_m, ey_m);
+      if (er > WORLD_HARD_BOUNDARY) {
+        const nx = ex_m / er, ny = ey_m / er;
+        ex_m = nx * WORLD_HARD_BOUNDARY;
+        ey_m = ny * WORLD_HARD_BOUNDARY;
+        const vr = evx_m * nx + evy_m * ny;
+        if (vr > 0) {
+          evx_m -= (1 + HARD_BOUNDARY_BOUNCE) * vr * nx;
+          evy_m -= (1 + HARD_BOUNDARY_BOUNCE) * vr * ny;
+        }
+      }
+    }
+
+    const eCurrentSpeed = Math.hypot(evx_m, evy_m);
+    const eHeading = eCurrentSpeed > 10
+      ? Math.atan2(evy_m, evx_m)
+      : Math.atan2(py_m - ey_m, px_m - ex_m);
+
+    /* ===== 玩家目標速度 ===== */
+    let t_x_m = ex_m, t_y_m = ey_m, t_vx_m = evx_m, t_vy_m = evy_m;
+    if (activeTarget?.type === 'landmark') {
+      const lm = landmarks[activeTarget.index];
+      t_x_m = lm.x; t_y_m = lm.y; t_vx_m = 0; t_vy_m = 0;
+    }
+
+    const dx = px_m - t_x_m;
+    const dy = py_m - t_y_m;
+    const dist_m = Math.hypot(dx, dy) || 1;
+    const ux = dx / dist_m;
+    const uy = dy / dist_m;
+    const tx = -uy;
+    const ty = ux;
+
+    let targetVx_m = 0, targetVy_m = 0;
+    if (escMode === 'idle' || !activeTarget) {
+      targetVx_m = 0; targetVy_m = 0;
+    } else if (escMode === 'keep') {
+      let desiredVr_m = Math.max(-targetSpeed, Math.min(targetSpeed, (targetDist - dist_m) * 2.5));
+      targetVx_m = ux * desiredVr_m + t_vx_m;
+      targetVy_m = uy * desiredVr_m + t_vy_m;
+    } else if (escMode === 'orbit') {
+      const maxVr_m = targetSpeed * 0.7071;
+      let desiredVr_m = Math.max(-maxVr_m, Math.min(maxVr_m, (targetDist - dist_m) * 2.5));
+      const vt_m = Math.sqrt(Math.max(0, targetSpeed * targetSpeed - desiredVr_m * desiredVr_m));
+      targetVx_m = ux * desiredVr_m + tx * vt_m + t_vx_m;
+      targetVy_m = uy * desiredVr_m + ty * vt_m + t_vy_m;
+    }
+
+    const calculatedSpeed = Math.hypot(targetVx_m, targetVy_m);
+    if (calculatedSpeed > targetSpeed && calculatedSpeed > 0) {
+      targetVx_m = (targetVx_m / calculatedSpeed) * targetSpeed;
+      targetVy_m = (targetVy_m / calculatedSpeed) * targetSpeed;
+    }
+
+    const pR = Math.hypot(px_m, py_m);
+    if (pR > WORLD_SOFT_BOUNDARY) {
+      const overshoot = pR - WORLD_SOFT_BOUNDARY;
+      const pushMag = Math.min(overshoot * WORLD_SOFT_PUSH_FACTOR, WORLD_SOFT_PUSH_MAX);
+      targetVx_m -= (px_m / pR) * pushMag;
+      targetVy_m -= (py_m / pR) * pushMag;
+    }
+
+    if (!isPaused) {
+      let dvx = targetVx_m - pvx_m;
+      let dvy = targetVy_m - pvy_m;
+      const dvLen = Math.hypot(dvx, dvy);
+      const maxDv = ACCEL * dt;
+      if (dvLen > maxDv && dvLen > 0) {
+        dvx = (dvx / dvLen) * maxDv;
+        dvy = (dvy / dvLen) * maxDv;
+      }
+      pvx_m += dvx;
+      pvy_m += dvy;
+      currentSpeed = Math.hypot(pvx_m, pvy_m);
+      px_m += pvx_m * dt;
+      py_m += pvy_m * dt;
+
+      const pr = Math.hypot(px_m, py_m);
+      if (pr > WORLD_HARD_BOUNDARY) {
+        const nx = px_m / pr, ny = py_m / pr;
+        px_m = nx * WORLD_HARD_BOUNDARY;
+        py_m = ny * WORLD_HARD_BOUNDARY;
+        const vr = pvx_m * nx + pvy_m * ny;
+        if (vr > 0) {
+          pvx_m -= (1 + HARD_BOUNDARY_BOUNCE) * vr * nx;
+          pvy_m -= (1 + HARD_BOUNDARY_BOUNCE) * vr * ny;
+        }
+        currentSpeed = Math.hypot(pvx_m, pvy_m);
+      }
+
+      if (Math.hypot(px_m - lastTrailX, py_m - lastTrailY) > 20) {
+        escTrail.push({ x: px_m, y: py_m });
+        lastTrailX = px_m;
+        lastTrailY = py_m;
+        if (escTrail.length > MAX_TRAIL_LENGTH) escTrail.shift();
+      }
+    }
+
+    if (currentSpeed > 1) heading = Math.atan2(pvy_m, pvx_m);
+
+    /* ===== 相機：軟邊界後跟隨至多 50%，硬邊界即停止 ===== */
+    {
+      const camR = Math.hypot(px_m, py_m);
+      const span = WORLD_HARD_BOUNDARY - WORLD_SOFT_BOUNDARY;
+      const camK = Math.max(0, Math.min(1, (camR - WORLD_SOFT_BOUNDARY) / span));
+      camOffsetX_m = px_m * camK * CAM_FOLLOW_MAX;
+      camOffsetY_m = py_m * camK * CAM_FOLLOW_MAX;
+    }
+
+    const camX = cx - camOffsetX_m * S;
+    const camY = cy - camOffsetY_m * S;
+
+    const ex_screen = camX + ex_m * S;
+    const ey_screen = camY + ey_m * S;
+    const px_screen = camX + px_m * S;
+    const py_screen = camY + py_m * S;
+
+    ctx.fillStyle = '#050a0c';
+    ctx.fillRect(0, 0, W, H);
+    drawGrid(camX, camY, S);
+    drawWorldBoundary(camX, camY, S, uiScale);
+
+    if (activeTarget) {
+      ctx.save();
+      ctx.setLineDash([5 * uiScale, 10 * uiScale]);
+      ctx.lineDashOffset = -T * 20 * uiScale;
+      ctx.strokeStyle = col(0.12);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(camX + t_x_m * S, camY + t_y_m * S, targetDist * S, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    landmarks.forEach((lm, idx) => {
+      const isSelected = activeTarget?.type === 'landmark' && activeTarget.index === idx;
+      drawLandmark(camX + lm.x * S, camY + lm.y * S, uiScale, lm.name, isSelected);
+    });
+
+    if (escTrail.length > 1) {
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let i = 1; i < escTrail.length; i++) {
+        const p1 = escTrail[i - 1];
+        const p2 = escTrail[i];
+        const alpha = i / escTrail.length;
+        ctx.beginPath();
+        ctx.moveTo(camX + p1.x * S, camY + p1.y * S);
+        ctx.lineTo(camX + p2.x * S, camY + p2.y * S);
+        ctx.strokeStyle = `hsla(${HUE}, 72%, 62%, ${alpha * 0.6})`;
+        ctx.lineWidth = Math.max(0.5, alpha * 2 * uiScale);
+        ctx.stroke();
+      }
+    }
+
+    const hdist_m = Math.hypot(px_m - ex_m, py_m - ey_m);
+    if (hdist_m < 5000) {
+      ctx.save();
+      ctx.setLineDash([4 * uiScale, 6 * uiScale]);
+      ctx.strokeStyle = col(0.15);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px_screen, py_screen);
+      ctx.lineTo(ex_screen, ey_screen);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (hoveredCardType === 'fire' || hoveredCardType === 'web' || hoveredCardType === 'neut') {
+      const range = hoveredCardType === 'fire' ? FIRE_RANGE
+                  : hoveredCardType === 'neut' ? NEUT_RANGE
+                  : WEB_RANGE;
+      const rangeColor = hdist_m > range ? 'rgba(255, 100, 100, 0.4)' : 'rgba(94, 224, 196, 0.3)';
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(px_screen, py_screen, range * S, 0, Math.PI * 2);
+      ctx.strokeStyle = rangeColor;
+      ctx.fillStyle = rangeColor.replace('0.3', '0.05').replace('0.4', '0.05');
+      ctx.lineWidth = 1;
+      ctx.setLineDash([8 * uiScale, 8 * uiScale]);
+      ctx.stroke();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    drawShip(ex_screen, ey_screen, eHeading, uiScale, true);
+
+    let eAlpha = 0.4, eLw = 1.1;
+    if (hoveredCardType && Math.hypot(mouseX - ex_screen, mouseY - ey_screen) < 100 * uiScale) {
+      eAlpha = 1.0; eLw = 2.0;
+    } else if (activeTarget?.type === 'hostile') {
+      eAlpha = 0.9; eLw = 1.5;
+    }
+    bracketRect(ex_screen, ey_screen, 12 * uiScale, 12 * uiScale, 5 * uiScale, eLw, eAlpha);
+
+    drawEnemyBars(ex_screen, ey_screen, uiScale);
+
+    ctx.save();
+    ctx.font = Math.max(9, 9 * uiScale) + 'px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = col(0.55);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('HOSTILE', ex_screen + 17 * uiScale, ey_screen - 4 * uiScale);
+    ctx.font = Math.max(8, 8 * uiScale) + 'px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = col(0.35);
+    ctx.textBaseline = 'top';
+    ctx.fillText(Math.round(eCurrentSpeed) + ' m/s', ex_screen + 17 * uiScale, ey_screen - 2 * uiScale);
+    ctx.restore();
+
+    if (webDebuffActive) {
+      ctx.save();
+      ctx.translate(ex_screen, ey_screen);
+      ctx.rotate(T * 1.5);
+      ctx.strokeStyle = 'rgba(94, 224, 196, 0.8)';
+      ctx.lineWidth = 1.2;
+      const r = 26 * uiScale;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3;
+        const px = Math.cos(a) * r, py = Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.stroke();
+      }
+      ctx.rotate(-T * 1.5);
+      ctx.fillStyle = 'rgba(94, 224, 196, 0.9)';
+      ctx.font = Math.max(8, 8 * uiScale) + 'px ui-monospace, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('-40%', 0, 0);
+      ctx.restore();
+    }
+
+    lasers.forEach(lz => {
+      let startX, startY, endX, endY;
+      if (lz.isHostile) {
+        startX = ex_screen + lz.startJitterX * uiScale;
+        startY = ey_screen + lz.startJitterY * uiScale;
+        endX = px_screen + lz.endJitterX * uiScale;
+        endY = py_screen + lz.endJitterY * uiScale;
+      } else {
+        startX = px_screen + lz.startJitterX * uiScale;
+        startY = py_screen + lz.startJitterY * uiScale;
+        endX = ex_screen + lz.endJitterX * uiScale;
+        endY = ey_screen + lz.endJitterY * uiScale;
+      }
+      const prog = lz.life / lz.maxLife;
+      const c = lz.isHostile ? '255,100,100' : '94,224,196';
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = `rgba(${c},${prog})`;
+      ctx.lineWidth = 3 * prog + 0.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = `rgba(255,255,255,${prog})`;
+      ctx.lineWidth = 1.2 * prog + 0.2;
+      ctx.stroke();
+
+      if (prog > 0.5) {
+        ctx.beginPath();
+        ctx.arc(startX, startY, 8 * prog * uiScale, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${c},${prog})`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(endX, endY, 6 * prog * uiScale, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${prog})`;
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    drawShip(px_screen, py_screen, heading, uiScale, false);
+    bracketRect(px_screen, py_screen, 12 * uiScale, 12 * uiScale, 5 * uiScale, 1.1, 0.62);
+
+    if (repairState === 'active') {
+      ctx.save();
+      const pulse = 0.5 + 0.5 * Math.sin(T * 6);
+      const glowRadius = 25 * uiScale + pulse * 8 * uiScale;
+      const glowGrad = ctx.createRadialGradient(px_screen, py_screen, 0, px_screen, py_screen, glowRadius);
+      glowGrad.addColorStop(0, 'rgba(100, 255, 180, 0.45)');
+      glowGrad.addColorStop(0.4, 'rgba(60, 240, 150, 0.15)');
+      glowGrad.addColorStop(1, 'rgba(60, 240, 150, 0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(px_screen, py_screen, glowRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(px_screen, py_screen, glowRadius + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(100, 255, 180, ${0.3 + pulse * 0.2})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    floatingTexts.forEach(ft => {
+      const alpha = ft.life / ft.maxLife;
+      const fx_screen = camX + ft.x * S;
+      const fy_screen = camY + ft.y * S;
+      ctx.save();
+      ctx.fillStyle = ft.color;
+      ctx.globalAlpha = alpha;
+      ctx.font = `bold ${Math.max(12, 15 * uiScale)}px ui-monospace, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 1;
+      ctx.shadowOffsetY = 1;
+      ctx.fillText(ft.text, fx_screen, fy_screen - 20 * uiScale);
+      ctx.restore();
+    });
+
+    ctx.save();
+    ctx.font = Math.max(9, 9 * uiScale) + 'px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = col(0.6);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('ESC', px_screen + 17 * uiScale, py_screen - 4 * uiScale);
+    ctx.restore();
+
+    if (isSelectingMode) {
+      ctx.save();
+      ctx.strokeStyle = col(0.7);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(mouseX - 8 * uiScale, mouseY); ctx.lineTo(mouseX + 8 * uiScale, mouseY);
+      ctx.moveTo(mouseX, mouseY - 8 * uiScale); ctx.lineTo(mouseX, mouseY + 8 * uiScale);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, 12 * uiScale, 0, Math.PI * 2);
+      ctx.strokeStyle = col(0.3);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawCorners(uiScale);
+    drawTurnBar(cx, uiScale);
+    drawUI(uiScale);
+
+    const armorTxt = Math.round(playerArmor) + ' / ' + playerMaxArmor;
+    if (armorTxt !== lastArmorTxt) {
+      lastArmorTxt = armorTxt;
+      armorVal.textContent = armorTxt;
+      armorFill.style.width = (playerArmor / playerMaxArmor * 100) + '%';
+    }
+
+    energyFill.style.width = (playerEnergy / currentMaxEnergy * 100) + '%';
+    const energyTxt = Math.round(playerEnergy) + ' / ' + currentMaxEnergy;
+    if (energyTxt !== lastEnergyTxt) {
+      lastEnergyTxt = energyTxt;
+      energyVal.textContent = energyTxt;
+      energyVal.style.color = speedMode === 2 ? '#ffd76e' : '#5ee0c4';
+    }
+
+    refreshCardVisuals();
+
+    const curTxt = Math.round(currentSpeed) + ' m/s';
+    if (curTxt !== lastCurTxt) { lastCurTxt = curTxt; curVal.textContent = curTxt; }
+
+    const gauge = Math.round(currentSpeed / 2000 * 100);
+    if (gauge !== lastGauge) { lastGauge = gauge; gaugeFill.style.width = gauge + '%'; }
+
+    const displayDist = activeTarget ? dist_m : hdist_m;
+    const curDistTxt = Math.round(displayDist) + ' m';
+    if (curDistTxt !== lastCurDistTxt) { lastCurDistTxt = curDistTxt; curDistVal.textContent = curDistTxt; }
+
+    const distGauge = Math.max(0, Math.min(100, Math.round(((displayDist - 500) / 3500) * 100)));
+    distGaugeFill.style.width = distGauge + '%';
+  }
+
+  function init() {
+    initCards();
+    resize();
+    updateSpeedMode();
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener('resize', resize);
+  init();
+})();
+</script>
+</body>
+</html>
